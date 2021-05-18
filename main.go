@@ -7,15 +7,21 @@ import (
 	"log"
 	"narval/gameLaunchers"
 	"net/http"
+	"os"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type jsobj map[string](interface{})
 
 const getIpUrl = "http://169.254.169.254/latest/meta-data/public-ipv4"
-const hookUrl = "https://"
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Panic(err)
+	}
 	factorioServer := gameLaunchers.FactorioServer{}
 	factorioServer.Game.Version = "1.1.33"
 	factorioServer.Game.Save = "aoeu.zip"
@@ -58,6 +64,7 @@ func sayInDiscord(message string) {
 		log.Panic(err)
 	}
 	reader := bytes.NewReader(payload)
+	hookUrl := os.Getenv("WEBHOOK_URL")
 	_, err = http.Post(hookUrl, "application/json", reader)
 	if err != nil {
 		log.Print(err)

@@ -1,4 +1,4 @@
-package gameLaunchers
+package launchers
 
 import (
 	"bufio"
@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -15,24 +16,30 @@ import (
 )
 
 type FactorioServer struct {
-	Game       struct{ Version, Save string }
-	Settings   ServerSettings
-	players    map[User]bool
-	shutdownAt time.Time
-	maxSession time.Time
-	out        chan ParsedLine
-	in         io.WriteCloser
+	players       map[User]bool
+	shutdownAt    time.Time
+	maxSession    time.Time
+	shutdownGrace time.Duration
+	out           chan ParsedLine
+	in            io.WriteCloser
 }
+
+const factorioBinaryPath = "game/factorio/bin/x64/factorio"
 
 var factorioRegexpInGame = regexp.MustCompile(`^ *\d+\.\d{3} Info ServerMultiplayerManager\.cpp:.+ changing state .+ to\(InGame\)$`)
 var factorioRegexpSaved = regexp.MustCompile(`^ *\d+\.\d{3} Info AppManagerStates\.cpp:\d+: Saving finished$`)
-var factorioRegexpChatJoinLeave = regexp.MustCompile(`^.{19} \[([A-Z]+)] (.+)$`)
+var factorioRegexpMainLog = regexp.MustCompile(`^.{19} \[([A-Z]+)] (.+)$`)
 var factorioRegexpChat = regexp.MustCompile(`^(.+?): (.+)$`)
 var factorioRegexpJoinLeave = regexp.MustCompile(`^(.+) (joined|left) the game$`)
 
 func (server *FactorioServer) Prepare() {
+	if _, err := os.Stat(factorioBinaryPath); !os.IsNotExist(err) {
+		return // Already have the executable, skip download
+	}
+
 	// Download
-	requestUrl := fmt.Sprintf("https://factorio.com/get-download/%s/headless/linux64", server.Game.Version)
+	const downloadUrl = "https://factorio.com/get-download/%s/headless/linux64"
+	requestUrl := fmt.Sprintf(downloadUrl, os.Getenv("FACTORIO_VERSION"))
 	log.Printf("Downloading: %s", requestUrl)
 	httpResponse, err := http.Get(requestUrl)
 	if err != nil {
@@ -47,7 +54,7 @@ func (server *FactorioServer) Prepare() {
 	}
 
 	// Un-tar
-	err = untar(decompressed)
+	err = untar(decompressed, "game")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -55,13 +62,16 @@ func (server *FactorioServer) Prepare() {
 
 func (server *FactorioServer) Start() {
 	server.players = map[User]bool{}
-	command := exec.Command("factorio/bin/x64/factorio", "--start-server", server.Game.Save)
+	command := exec.Command(factorioBinaryPath, "--start-server", "game/save.zip")
 	stdout, _ := command.StdoutPipe()
 	server.in, _ = command.StdinPipe()
 	command.Start()
 	server.out = make(chan ParsedLine, 100)
-	server.shutdownAt = time.Now().Add(server.Settings.StartupGrace)
-	server.maxSession = time.Now().Add(server.Settings.MaxSession)
+	var maxSessionDuration, _ = time.ParseDuration(os.Getenv("MAX_SESSION"))
+	var startupGraceDuration, _ = time.ParseDuration(os.Getenv("STARTUP_GRACE"))
+	server.shutdownAt = time.Now().Add(startupGraceDuration)
+	server.maxSession = time.Now().Add(maxSessionDuration)
+	server.shutdownGrace, _ = time.ParseDuration(os.Getenv("SHUTDOWN_GRACE"))
 	go server.readStdout(stdout)
 	go server.idleTimeout()
 	go stdinPassThrough(server.in)
@@ -102,40 +112,40 @@ func (server *FactorioServer) processLine(line string) (parsed ParsedLine) {
 		return
 	}
 
-	matches := factorioRegexpChatJoinLeave.FindStringSubmatch(line)
+	matches := factorioRegexpMainLog.FindStringSubmatch(line)
 	if matches == nil {
 		return
 	}
 	event := matches[1]
-	if event == "JOIN" {
+	line = matches[2]
+	switch event {
+	case "JOIN":
 		parsed.Event = EventJoin
-		matches = factorioRegexpJoinLeave.FindStringSubmatch(matches[2])
+		matches = factorioRegexpJoinLeave.FindStringSubmatch(line)
 		parsed.Author = User(matches[1])
 		server.players[parsed.Author] = true
-	} else if event == "LEAVE" {
+	case "LEAVE":
 		parsed.Event = EventLeave
-		matches = factorioRegexpJoinLeave.FindStringSubmatch(matches[2])
+		matches = factorioRegexpJoinLeave.FindStringSubmatch(line)
 		parsed.Author = User(matches[1])
 		delete(server.players, parsed.Author)
 		if len(server.players) == 0 {
-			server.shutdownAt = time.Now().Add(server.Settings.ShutdownGrace)
+			server.shutdownAt = time.Now().Add(server.shutdownGrace)
 		}
-	} else {
+	case "CHAT":
 		parsed.Event = EventTalk
-		if event == "CHAT" {
+		parsed.Message = line
+		matches := factorioRegexpChat.FindStringSubmatch(line)
+		if matches != nil {
+			parsed.Author = User(matches[1])
 			parsed.Message = matches[2]
-			matches := factorioRegexpChat.FindStringSubmatch(matches[2])
-			if matches != nil {
-				parsed.Author = User(matches[1])
-				parsed.Message = matches[2]
-			}
-		} else {
-			parsed.Message = matches[0]
 		}
 	}
+
 	if len(server.players) != 0 || server.shutdownAt.After(server.maxSession) {
 		server.shutdownAt = server.maxSession
 	}
+
 	return
 }
 

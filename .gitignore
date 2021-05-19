@@ -13,4 +13,5 @@
 *.out
 
 # Other
+game
 .env

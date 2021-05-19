@@ -1,4 +1,4 @@
-package gameLaunchers
+package launchers
 
 import (
 	"archive/tar"
@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 type Server interface {
@@ -16,12 +15,6 @@ type Server interface {
 	NumPlayers() int
 	GetLinesChannel() chan ParsedLine
 	SendCommand(ParsedLine)
-}
-
-type ServerSettings struct {
-	StartupGrace  time.Duration
-	ShutdownGrace time.Duration
-	MaxSession    time.Duration
 }
 
 type ParsedLine struct {
@@ -55,7 +48,7 @@ func stdinPassThrough(destination io.WriteCloser) {
 	os.Stdin.Close()
 }
 
-func untar(decompressedReader io.Reader) error {
+func untar(decompressedReader io.Reader, pathPrefix string) error {
 	madeDir := map[string]bool{}
 	unpacked := tar.NewReader(decompressedReader)
 	header, err := unpacked.Next()
@@ -63,7 +56,8 @@ func untar(decompressedReader io.Reader) error {
 		if header == nil { // no one knows why this happens
 			continue
 		}
-		path := filepath.FromSlash(header.Name)
+		relativePath := filepath.FromSlash(header.Name)
+		path := filepath.Join(pathPrefix, relativePath)
 		info := header.FileInfo()
 		mode := info.Mode()
 		switch {

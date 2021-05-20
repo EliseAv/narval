@@ -1,6 +1,7 @@
 package main
 
 import (
+	"narval/dispatcher"
 	"narval/launchers"
 	"os"
 
@@ -15,4 +16,6 @@ func main() {
 		launchers.Launch(launch)
 		return
 	}
+
+	dispatcher.RunDispatcher()
 }

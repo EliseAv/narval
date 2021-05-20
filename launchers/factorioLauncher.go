@@ -67,11 +67,24 @@ func (server *FactorioServer) Start() {
 	server.in, _ = command.StdinPipe()
 	command.Start()
 	server.out = make(chan ParsedLine, 100)
-	var maxSessionDuration, _ = time.ParseDuration(os.Getenv("MAX_SESSION"))
-	var startupGraceDuration, _ = time.ParseDuration(os.Getenv("STARTUP_GRACE"))
+
+	startupGraceDuration, err := time.ParseDuration(os.Getenv("STARTUP_GRACE"))
+	if err != nil {
+		startupGraceDuration = 5 * time.Minute
+	}
 	server.shutdownAt = time.Now().Add(startupGraceDuration)
+
+	maxSessionDuration, err := time.ParseDuration(os.Getenv("MAX_SESSION"))
+	if err != nil {
+		startupGraceDuration = 24 * time.Hour
+	}
 	server.maxSession = time.Now().Add(maxSessionDuration)
-	server.shutdownGrace, _ = time.ParseDuration(os.Getenv("SHUTDOWN_GRACE"))
+
+	server.shutdownGrace, err = time.ParseDuration(os.Getenv("SHUTDOWN_GRACE"))
+	if err != nil {
+		server.shutdownGrace = 1 * time.Minute
+	}
+
 	go server.readStdout(stdout)
 	go server.idleTimeout()
 	go stdinPassThrough(server.in)

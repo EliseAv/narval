@@ -1,13 +1,14 @@
 package dispatcher
 
 import (
-	"io/ioutil"
+	"bytes"
+	"encoding/json"
 	"log"
 	"net/url"
 	"os"
 	"strconv"
 
-	"github.com/shamaton/msgpack"
+	"github.com/natefinch/atomic"
 )
 
 type Snowflake uint64
@@ -29,18 +30,21 @@ type ChannelStore struct {
 type GuildStore struct{}
 
 var store Store
-var storeUrl *url.URL
+var storeUrl url.URL
 
 func loadSettings() {
 	envUrl := os.Getenv("STORAGE_URL")
-	storeUrl, err := url.Parse(envUrl)
+	storeUrlPointer, err := url.Parse(envUrl)
 	if err != nil {
 		log.Printf("Unable to parse store URL (%s): %v", envUrl, err)
 		return
 	}
+	storeUrl = *storeUrlPointer
+	log.Printf("Store URL is %v", storeUrl)
 	var buffer []byte
-	if storeUrl.Scheme == "file" {
-		buffer, err = ioutil.ReadFile(storeUrl.Opaque)
+	switch storeUrl.Scheme {
+	case "file":
+		buffer, err = os.ReadFile(storeUrl.Opaque)
 		if os.IsNotExist(err) {
 			initializeStore()
 			return
@@ -48,16 +52,28 @@ func loadSettings() {
 		if err != nil {
 			log.Panic(err)
 		}
-	} else {
+	default:
 		log.Panicf("Scheme not implemented: %v", storeUrl)
 	}
-	msgpack.Unmarshal(buffer, &store)
+	json.Unmarshal(buffer, &store)
 }
 
 func initializeStore() {
 	store.Users = map[Snowflake]*UserStore{}
 	store.Channels = map[Snowflake]*ChannelStore{}
 	store.Guilds = map[Snowflake]*GuildStore{}
+}
+
+func (store Store) store() {
+	buffer, err := json.Marshal(store)
+	if err != nil {
+		log.Printf("Unable to marshal")
+	}
+	switch storeUrl.Scheme {
+	case "file":
+		reader := bytes.NewReader(buffer)
+		atomic.WriteFile(storeUrl.Opaque, reader)
+	}
 }
 
 func (store Store) user(id string) *UserStore {

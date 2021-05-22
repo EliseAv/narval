@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
 	"strings"
@@ -62,18 +63,31 @@ func (event messageEvent) choose() {
 }
 
 func (event messageEvent) commandOpme() {
+	user := store.user(event.message.Author.ID)
 	if len(event.command) == 1 {
-		author := event.message.Author
-		whatever := make([]byte, 32)
-		encoded := base64.StdEncoding.EncodeToString(whatever)
-		store.user(author.ID).confirmation = encoded
-		log.Printf("Tell %s#%s it's %s", author.Username, author.Discriminator, encoded)
-		event.reply("I'll think about it.")
+		if user.IsAdmin {
+			event.reply("No need.")
+		} else {
+			author := event.message.Author
+			whatever := make([]byte, 48)
+			rand.Read(whatever)
+			encoded := base64.StdEncoding.EncodeToString(whatever)
+			user.confirmation = encoded
+			log.Printf("Tell %s#%s >opme %s", author.Username, author.Discriminator, encoded)
+			event.reply("I'll think about it.")
+		}
 	} else {
-		// decode and check
+		password := event.command[1]
+		if password == user.confirmation {
+			user.IsAdmin = true
+			store.store()
+			event.reply("Okay.")
+		} else {
+			event.reply("Still thinking about it.")
+		}
 	}
 }
 
 func (event messageEvent) reply(message string) {
-	event.session.ChannelMessageSendReply(event.message.ChannelID, message, event.message.MessageReference)
+	event.session.ChannelMessageSendReply(event.message.ChannelID, message, event.message.Reference())
 }

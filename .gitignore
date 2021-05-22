@@ -13,5 +13,6 @@
 *.out
 
 # Other
-game
 .env
+/store.*
+game

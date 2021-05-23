@@ -1,7 +1,9 @@
 package dispatcher
 
 import (
+	crypto_rand "crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"math/rand"
@@ -9,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
@@ -42,23 +45,35 @@ func RunDispatcher() {
 	<-signalsChannel
 }
 
+func init() {
+	// Try to seed the RNG with a cryptographically good 64-bit number
+	// https://stackoverflow.com/a/54491783/98029
+	buffer := make([]byte, 8)
+	_, err := crypto_rand.Read(buffer)
+	var seed int64
+	if err != nil {
+		seed = time.Now().UnixNano() ^ -0xbeef1e57b00b1e5
+	} else {
+		seed = int64(binary.LittleEndian.Uint64(buffer))
+	}
+	rand.Seed(seed)
+}
+
 func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate) {
 	if message.Author.ID == session.State.User.ID { // self messages
 		return
 	}
 
-	if message.Content[:1] != ">" { // bye
-		return
-	}
-
-	command := strings.Split(message.Content[1:], " ")
-	event := messageEvent{session, message, command}
-	event.choose()
-}
-
-func (event messageEvent) choose() {
-	if event.command[0] == "opme" {
-		event.commandOpme()
+	if message.Content[:1] == ">" {
+		// commands
+		command := strings.Split(message.Content[1:], " ")
+		event := messageEvent{session, message, command}
+		switch event.command[0] {
+		case "opme":
+			event.commandOpme()
+		case "setup":
+			event.commandSetup()
+		}
 	}
 }
 
@@ -85,6 +100,29 @@ func (event messageEvent) commandOpme() {
 		} else {
 			event.reply("Still thinking about it.")
 		}
+	}
+}
+
+func (event messageEvent) commandSetup() {
+	user := store.user(event.message.Author.ID)
+	if !user.IsAdmin {
+		event.reply("Nope.")
+		return
+	}
+	channel := store.channel(event.message.ChannelID)
+	if channel.SetupComplete {
+		event.reply("Already set up.")
+		return
+	}
+	var game string
+	if len(event.command) > 1 {
+		game = event.command[1]
+	}
+	switch game {
+	case "factorio":
+		message := strings.Join(factorioSetupMessage(), "\n")
+		message = strings.TrimSpace(message)
+		message = strings.ReplaceAll(message, "\t", "")
 	}
 }
 

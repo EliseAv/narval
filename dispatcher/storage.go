@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/natefinch/atomic"
 )
@@ -25,12 +26,20 @@ type UserStore struct {
 }
 
 type ChannelStore struct {
+	SetupComplete bool
+	Game          string
+	Flags         map[string]bool
+	Numbers       map[string]float64
+	Settings      map[string]string
 }
 
-type GuildStore struct{}
+type GuildStore struct {
+	AssumeRole string
+}
 
 var store Store
 var storeUrl url.URL
+var storeThrottle = make(chan struct{})
 
 func loadSettings() {
 	envUrl := os.Getenv("STORAGE_URL")
@@ -56,6 +65,7 @@ func loadSettings() {
 		log.Panicf("Scheme not implemented: %v", storeUrl)
 	}
 	json.Unmarshal(buffer, &store)
+	go keepStoring()
 }
 
 func initializeStore() {
@@ -65,14 +75,24 @@ func initializeStore() {
 }
 
 func (store Store) store() {
-	buffer, err := json.Marshal(store)
-	if err != nil {
-		log.Printf("Unable to marshal")
-	}
-	switch storeUrl.Scheme {
-	case "file":
-		reader := bytes.NewReader(buffer)
-		atomic.WriteFile(storeUrl.Opaque, reader)
+	storeThrottle <- struct{}{}
+}
+
+func keepStoring() {
+	for {
+		time.Sleep(1 * time.Second)
+		<-storeThrottle
+
+		buffer, err := json.Marshal(store)
+		if err != nil {
+			log.Printf("Unable to marshal (%s): %v", err, store)
+			continue
+		}
+		switch storeUrl.Scheme {
+		case "file":
+			reader := bytes.NewReader(buffer)
+			atomic.WriteFile(storeUrl.Opaque, reader)
+		}
 	}
 }
 
@@ -84,6 +104,26 @@ func (store Store) user(id string) *UserStore {
 		store.Users[flake] = user
 	}
 	return user
+}
+
+func (store Store) channel(id string) *ChannelStore {
+	flake := sf(id)
+	channel, found := store.Channels[flake]
+	if !found {
+		channel = &ChannelStore{}
+		store.Channels[flake] = channel
+	}
+	return channel
+}
+
+func (store Store) guild(id string) *GuildStore {
+	flake := sf(id)
+	guild, found := store.Guilds[flake]
+	if !found {
+		guild = &GuildStore{}
+		store.Guilds[flake] = guild
+	}
+	return guild
 }
 
 func sf(id string) Snowflake {

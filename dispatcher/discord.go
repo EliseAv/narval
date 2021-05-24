@@ -74,6 +74,10 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		case "setup":
 			event.commandSetup()
 		}
+	} else if len(message.Attachments) > 0 {
+		for _, v := range message.Attachments {
+			log.Printf("%v", v)
+		}
 	}
 }
 
@@ -121,8 +125,9 @@ func (event messageEvent) commandSetup() {
 	switch game {
 	case "factorio":
 		message := strings.Join(factorioSetupMessage(), "\n")
-		message = strings.TrimSpace(message)
-		message = strings.ReplaceAll(message, "\t", "")
+		event.reply(message)
+	default:
+		event.reply("So, Factorio, then? `>setup factorio`")
 	}
 }
 

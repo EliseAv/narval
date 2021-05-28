@@ -31,11 +31,19 @@ type ChannelStore struct {
 	Flags         map[string]bool
 	Numbers       map[string]float64
 	Settings      map[string]string
+	dispatcher    dispatcher
 }
 
 type GuildStore struct {
 	AssumeRole string
 }
+
+type dispatcher interface {
+	setupMessage() []string
+	configFromEvent(messageEvent)
+}
+
+var stringToDispatcher = map[string]dispatcher{}
 
 var store Store
 var storeUrl url.URL
@@ -112,6 +120,9 @@ func (store Store) channel(id string) *ChannelStore {
 	if !found {
 		channel = &ChannelStore{}
 		store.Channels[flake] = channel
+	}
+	if channel.dispatcher == nil {
+		channel.dispatcher = stringToDispatcher[channel.Game]
 	}
 	return channel
 }

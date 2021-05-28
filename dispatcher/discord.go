@@ -64,20 +64,25 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		return
 	}
 
-	if message.Content[:1] == ">" {
-		// commands
-		command := strings.Split(message.Content[1:], " ")
-		event := messageEvent{session, message, command}
-		switch event.command[0] {
-		case "opme":
-			event.commandOpme()
-		case "setup":
-			event.commandSetup()
-		}
-	} else if len(message.Attachments) > 0 {
+	if len(message.Attachments) > 0 {
 		for _, v := range message.Attachments {
 			log.Printf("%v", v)
 		}
+	} else if len(message.Content) > 1 && message.Content[:1] == ">" {
+		command := strings.Split(message.Content[1:], " ")
+		messageEvent{session, message, command}.commands()
+	}
+}
+
+func (event messageEvent) commands() {
+	// commands
+	switch event.command[0] {
+	case "opme":
+		event.commandOpme()
+	case "setup":
+		event.commandSetup()
+	case "config":
+		event.commandConfig()
 	}
 }
 
@@ -118,19 +123,34 @@ func (event messageEvent) commandSetup() {
 		event.reply("Already set up.")
 		return
 	}
-	var game string
 	if len(event.command) > 1 {
-		game = event.command[1]
+		channel.Game = event.command[1]
+		channel.dispatcher = stringToDispatcher[channel.Game]
 	}
-	switch game {
-	case "factorio":
-		message := strings.Join(factorioSetupMessage(), "\n")
-		event.reply(message)
-	default:
-		event.reply("So, Factorio, then? `>setup factorio`")
+	if channel.dispatcher == nil {
+		event.reply("Try `>setup factorio`")
+	} else {
+		message := channel.dispatcher.setupMessage()
+		if len(message) > 0 {
+			event.reply(strings.Join(message, "\n"))
+		}
 	}
 }
 
-func (event messageEvent) reply(message string) {
-	event.session.ChannelMessageSendReply(event.message.ChannelID, message, event.message.Reference())
+func (event messageEvent) commandConfig() {
+	dispatcher := store.channel(event.message.ChannelID).dispatcher
+	if dispatcher != nil {
+		dispatcher.configFromEvent(event)
+	} else {
+		event.react(":shrug:")
+	}
+}
+
+func (event messageEvent) reply(message string) error {
+	_, err := event.session.ChannelMessageSendReply(event.message.ChannelID, message, event.message.Reference())
+	return err
+}
+
+func (event messageEvent) react(emoji string) error {
+	return event.session.MessageReactionAdd(event.message.ChannelID, event.message.ID, emoji)
 }

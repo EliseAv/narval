@@ -28,26 +28,19 @@ type UserStore struct {
 type ChannelStore struct {
 	SetupComplete bool
 	Game          string
-	Flags         map[string]bool
-	Numbers       map[string]float64
-	Settings      map[string]string
 	dispatcher    dispatcher
 }
 
 type GuildStore struct {
-	AssumeRole string
+	Bucket string
+	Region string
 }
 
-type dispatcher interface {
-	setupMessage() []string
-	configFromEvent(messageEvent)
-}
-
-var stringToDispatcher = map[string]dispatcher{}
+var allDispatchers = map[string]dispatcher{}
 
 var store Store
 var storeUrl url.URL
-var storeThrottle = make(chan struct{})
+var storeThrottle = make(chan struct{}, 200)
 
 func loadSettings() {
 	envUrl := os.Getenv("STORAGE_URL")
@@ -122,7 +115,7 @@ func (store Store) channel(id string) *ChannelStore {
 		store.Channels[flake] = channel
 	}
 	if channel.dispatcher == nil {
-		channel.dispatcher = stringToDispatcher[channel.Game]
+		channel.dispatcher = allDispatchers[channel.Game]
 	}
 	return channel
 }

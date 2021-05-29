@@ -22,6 +22,10 @@ type messageEvent struct {
 	command []string
 }
 
+type dispatcher interface {
+	setup(messageEvent)
+}
+
 func RunDispatcher() {
 	loadSettings()
 
@@ -79,10 +83,10 @@ func (event messageEvent) commands() {
 	switch event.command[0] {
 	case "opme":
 		event.commandOpme()
+	case "aws":
+		event.commandAws()
 	case "setup":
 		event.commandSetup()
-	case "config":
-		event.commandConfig()
 	}
 }
 
@@ -90,7 +94,7 @@ func (event messageEvent) commandOpme() {
 	user := store.user(event.message.Author.ID)
 	if len(event.command) == 1 {
 		if user.IsAdmin {
-			event.reply("No need.")
+			event.reply(":white_check_mark:")
 		} else {
 			author := event.message.Author
 			whatever := make([]byte, 48)
@@ -98,51 +102,55 @@ func (event messageEvent) commandOpme() {
 			encoded := base64.StdEncoding.EncodeToString(whatever)
 			user.confirmation = encoded
 			log.Printf("Tell %s#%s >opme %s", author.Username, author.Discriminator, encoded)
-			event.reply("I'll think about it.")
+			event.react(":thinking:")
 		}
 	} else {
 		password := event.command[1]
 		if password == user.confirmation {
 			user.IsAdmin = true
 			store.store()
-			event.reply("Okay.")
+			event.react(":white_check_mark:")
 		} else {
-			event.reply("Still thinking about it.")
+			event.react(":unamused:")
 		}
 	}
+}
+
+func (event messageEvent) commandAws() {
+	user := store.user(event.message.Author.ID)
+	if !user.IsAdmin {
+		event.react(":unamused:")
+		return
+	}
+	if len(event.command) != 3 {
+		event.reply("Expected: `>aws region-name bucket-name`")
+	}
+	guild := store.guild(event.message.GuildID)
+	guild.Region = event.command[1]
+	guild.Bucket = event.command[2]
+	store.store()
+	event.react(":white_check_mark:")
 }
 
 func (event messageEvent) commandSetup() {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		event.reply("Nope.")
+		event.react(":unamused:")
 		return
 	}
 	channel := store.channel(event.message.ChannelID)
 	if channel.SetupComplete {
-		event.reply("Already set up.")
+		event.reply(fmt.Sprintf("Already set up %s.", channel.Game))
 		return
 	}
 	if len(event.command) > 1 {
 		channel.Game = event.command[1]
-		channel.dispatcher = stringToDispatcher[channel.Game]
+		channel.dispatcher = allDispatchers[channel.Game]
 	}
 	if channel.dispatcher == nil {
 		event.reply("Try `>setup factorio`")
 	} else {
-		message := channel.dispatcher.setupMessage()
-		if len(message) > 0 {
-			event.reply(strings.Join(message, "\n"))
-		}
-	}
-}
-
-func (event messageEvent) commandConfig() {
-	dispatcher := store.channel(event.message.ChannelID).dispatcher
-	if dispatcher != nil {
-		dispatcher.configFromEvent(event)
-	} else {
-		event.react(":shrug:")
+		channel.dispatcher.setup(event)
 	}
 }
 

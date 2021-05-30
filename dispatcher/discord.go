@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
 	"os/signal"
+	"path"
 	"strings"
 	"syscall"
 	"time"
@@ -23,7 +25,7 @@ type messageEvent struct {
 }
 
 type dispatcher interface {
-	setup(messageEvent)
+	setup(messageEvent) error
 }
 
 func RunDispatcher() {
@@ -161,4 +163,10 @@ func (event messageEvent) reply(message string) error {
 
 func (event messageEvent) react(emoji string) error {
 	return event.session.MessageReactionAdd(event.message.ChannelID, event.message.ID, emoji)
+}
+
+func (event messageEvent) putS3file(filename string, reader io.Reader) error {
+	bucket := store.guild(event.message.GuildID).Bucket
+	key := path.Join(event.message.ChannelID, filename)
+	return s3upload(bucket, key, reader)
 }

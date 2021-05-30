@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-type jsobj map[string](interface{})
+type jsobj map[string]interface{}
 
 var ipAddress string
 var ipAddressKnown chan struct{} = make(chan struct{})

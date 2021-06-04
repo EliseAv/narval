@@ -6,13 +6,10 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/natefinch/atomic"
 )
-
-type Snowflake uint64
 
 type Store struct {
 	Users    map[Snowflake]*UserStore
@@ -128,13 +125,4 @@ func (store Store) guild(id string) *GuildStore {
 		store.Guilds[flake] = guild
 	}
 	return guild
-}
-
-func sf(id string) Snowflake {
-	result, _ := strconv.ParseUint(id, 10, 64)
-	return Snowflake(result)
-}
-
-func (flake Snowflake) String() string {
-	return strconv.FormatUint(uint64(flake), 10)
 }

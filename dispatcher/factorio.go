@@ -33,3 +33,8 @@ func (factorioDispatcher) setup(event messageEvent) error {
 	event.reply(strings.Join(message, "\n"))
 	return nil
 }
+
+func (factorioDispatcher) play(event messageEvent) error {
+	//guild := store.guild(event.message.GuildID)
+	return notImplemented{}
+}

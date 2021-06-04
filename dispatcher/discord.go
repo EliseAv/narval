@@ -26,6 +26,7 @@ type messageEvent struct {
 
 type dispatcher interface {
 	setup(messageEvent) error
+	play(messageEvent) error
 }
 
 func RunDispatcher() {
@@ -76,27 +77,40 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		}
 	} else if len(message.Content) > 1 && message.Content[:1] == ">" {
 		command := strings.Split(message.Content[1:], " ")
-		messageEvent{session, message, command}.commands()
+		event := messageEvent{session, message, command}
+		err := event.commands()
+		if err != nil {
+			if err == (authFailed{}) {
+				event.react(":unamused:")
+			} else {
+				log.Printf("Message errored out: %s", err)
+				event.react(":warning:")
+			}
+		}
 	}
 }
 
-func (event messageEvent) commands() {
+func (event messageEvent) commands() error {
 	// commands
 	switch event.command[0] {
 	case "opme":
-		event.commandOpme()
+		return event.commandOpme()
 	case "aws":
-		event.commandAws()
+		return event.commandAws()
 	case "setup":
-		event.commandSetup()
+		return event.commandSetup()
+	case "play":
+		return event.commandPlay()
+	default:
+		return nil
 	}
 }
 
-func (event messageEvent) commandOpme() {
+func (event messageEvent) commandOpme() error {
 	user := store.user(event.message.Author.ID)
 	if len(event.command) == 1 {
 		if user.IsAdmin {
-			event.reply(":white_check_mark:")
+			return event.react(":white_check_mark:")
 		} else {
 			author := event.message.Author
 			whatever := make([]byte, 48)
@@ -104,55 +118,62 @@ func (event messageEvent) commandOpme() {
 			encoded := base64.StdEncoding.EncodeToString(whatever)
 			user.confirmation = encoded
 			log.Printf("Tell %s#%s >opme %s", author.Username, author.Discriminator, encoded)
-			event.react(":thinking:")
+			return event.react(":thinking:")
 		}
 	} else {
 		password := event.command[1]
 		if password == user.confirmation {
 			user.IsAdmin = true
 			store.store()
-			event.react(":white_check_mark:")
+			return event.react(":white_check_mark:")
 		} else {
-			event.react(":unamused:")
+			return authFailed{}
 		}
 	}
 }
 
-func (event messageEvent) commandAws() {
+func (event messageEvent) commandAws() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		event.react(":unamused:")
-		return
+		return authFailed{}
 	}
 	if len(event.command) != 3 {
-		event.reply("Expected: `>aws region-name bucket-name`")
+		return event.reply("Expected: `>aws region-name bucket-name`")
 	}
 	guild := store.guild(event.message.GuildID)
 	guild.Region = event.command[1]
 	guild.Bucket = event.command[2]
 	store.store()
-	event.react(":white_check_mark:")
+	return event.react(":white_check_mark:")
 }
 
-func (event messageEvent) commandSetup() {
+func (event messageEvent) commandSetup() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		event.react(":unamused:")
-		return
+		return authFailed{}
 	}
 	channel := store.channel(event.message.ChannelID)
 	if channel.SetupComplete {
-		event.reply(fmt.Sprintf("Already set up %s.", channel.Game))
-		return
+		return event.reply(fmt.Sprintf("Already set up %s.", channel.Game))
 	}
+
 	if len(event.command) > 1 {
 		channel.Game = event.command[1]
 		channel.dispatcher = allDispatchers[channel.Game]
 	}
 	if channel.dispatcher == nil {
-		event.reply("Try `>setup factorio`")
+		return event.reply("Try `>setup factorio`")
 	} else {
-		channel.dispatcher.setup(event)
+		return channel.dispatcher.setup(event)
+	}
+}
+
+func (event messageEvent) commandPlay() error {
+	channel := store.channel(event.message.ChannelID)
+	if channel.dispatcher != nil {
+		return channel.dispatcher.play(event)
+	} else {
+		return event.react(":shrug:")
 	}
 }
 

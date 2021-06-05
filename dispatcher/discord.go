@@ -48,7 +48,7 @@ func RunDispatcher() {
 	// We done; just wait for exit
 	fmt.Println("Bot is running. Ctrl-C to exit.")
 	signalsChannel := make(chan os.Signal, 1)
-	signal.Notify(signalsChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	signal.Notify(signalsChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	<-signalsChannel
 }
 
@@ -187,7 +187,7 @@ func (event messageEvent) react(emoji string) error {
 }
 
 func (event messageEvent) putS3file(filename string, reader io.Reader) error {
-	bucket := store.guild(event.message.GuildID).Bucket
+	guild := store.guild(event.message.GuildID)
 	key := path.Join(event.message.ChannelID, filename)
-	return s3upload(bucket, key, reader)
+	return s3upload(guild, key, reader)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"narval/talkers"
 	"net/url"
 	"os"
 	"time"
@@ -26,6 +27,7 @@ type ChannelStore struct {
 	SetupComplete bool
 	Game          string
 	dispatcher    dispatcher
+	session       *talkers.Session
 }
 
 type GuildStore struct {

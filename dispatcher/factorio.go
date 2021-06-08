@@ -3,7 +3,6 @@ package dispatcher
 import (
 	"bytes"
 	"encoding/json"
-	"narval/talkers"
 	"strings"
 )
 
@@ -38,21 +37,13 @@ func (factorioDispatcher) setup(event messageEvent) error {
 func (factorioDispatcher) play(event messageEvent) error {
 	guild := store.guild(event.message.GuildID)
 	channel := store.channel(event.message.ChannelID)
-	session, err := talkers.NewSession()
-	if err != nil {
-		return err
-	}
-	channel.session = session
+	channel.session = randString()
 	s3uploadSelf(guild)
 	variables := map[string]string{
 		"LAUNCH":  "factorio",
 		"BUCKET":  guild.Bucket,
-		"SESSION": channel.session.Id.String(),
+		"PREFIX":  channel.Prefix,
+		"SESSION": channel.session,
 	}
-	script := []string{
-		"aws s3 cp s3://$BUCKET/narval /narval",
-		"chmod +x /narval",
-		"/narval",
-	}
-	return ec2makeServer(guild, script, variables)
+	return ec2makeServer(guild, variables)
 }

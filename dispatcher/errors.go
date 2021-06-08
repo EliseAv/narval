@@ -1,13 +1,7 @@
 package dispatcher
 
-type authFailed struct{}
+type unauthorized struct{}
 
-func (authFailed) Error() string {
+func (unauthorized) Error() string {
 	return "Unauthorized"
-}
-
-type notImplemented struct{}
-
-func (notImplemented) Error() string {
-	return "Not implemented"
 }

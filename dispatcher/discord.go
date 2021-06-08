@@ -55,15 +55,23 @@ func RunDispatcher() {
 func init() {
 	// Try to seed the RNG with a cryptographically good 64-bit number
 	// https://stackoverflow.com/a/54491783/98029
-	buffer := make([]byte, 8)
-	_, err := crypto_rand.Read(buffer)
+	var buffer [8]byte
+	_, err := crypto_rand.Read(buffer[:])
 	var seed int64
 	if err != nil {
 		seed = time.Now().UnixNano() ^ -0xbeef1e57b00b1e5
 	} else {
-		seed = int64(binary.LittleEndian.Uint64(buffer))
+		seed = int64(binary.LittleEndian.Uint64(buffer[:]))
 	}
 	rand.Seed(seed)
+}
+
+func randString() string {
+	var buffer [6]byte
+	var result [8]byte
+	rand.Read(buffer[:])
+	base64.URLEncoding.Encode(result[:], buffer[:])
+	return string(result[:])
 }
 
 func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate) {
@@ -80,7 +88,7 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		event := messageEvent{session, message, command}
 		err := event.commands()
 		if err != nil {
-			if err == (authFailed{}) {
+			if err == (unauthorized{}) {
 				event.react(":unamused:")
 			} else {
 				log.Printf("Message errored out: %s", err)
@@ -113,11 +121,8 @@ func (event messageEvent) commandOpme() error {
 			return event.react(":white_check_mark:")
 		} else {
 			author := event.message.Author
-			whatever := make([]byte, 48)
-			rand.Read(whatever)
-			encoded := base64.StdEncoding.EncodeToString(whatever)
-			user.confirmation = encoded
-			log.Printf("Tell %s#%s >opme %s", author.Username, author.Discriminator, encoded)
+			user.confirmation = randString() + randString() + randString()
+			log.Printf("Tell %s#%s >opme %s", author.Username, author.Discriminator, user.confirmation)
 			return event.react(":thinking:")
 		}
 	} else {
@@ -127,7 +132,7 @@ func (event messageEvent) commandOpme() error {
 			store.store()
 			return event.react(":white_check_mark:")
 		} else {
-			return authFailed{}
+			return unauthorized{}
 		}
 	}
 }
@@ -135,7 +140,7 @@ func (event messageEvent) commandOpme() error {
 func (event messageEvent) commandAws() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		return authFailed{}
+		return unauthorized{}
 	}
 	if len(event.command) != 3 {
 		return event.reply("Expected: `>aws region-name bucket-name`")
@@ -150,7 +155,7 @@ func (event messageEvent) commandAws() error {
 func (event messageEvent) commandSetup() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		return authFailed{}
+		return unauthorized{}
 	}
 	channel := store.channel(event.message.ChannelID)
 	if channel.SetupComplete {

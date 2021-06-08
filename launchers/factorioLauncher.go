@@ -38,8 +38,11 @@ func (server *FactorioServer) Prepare() {
 	}
 
 	// Download
-	const downloadUrl = "https://factorio.com/get-download/%s/headless/linux64"
-	requestUrl := fmt.Sprintf(downloadUrl, os.Getenv("FACTORIO_VERSION"))
+	version := os.Getenv("FACTORIO_VERSION")
+	if version == "" {
+		version = "latest"
+	}
+	requestUrl := fmt.Sprintf("https://factorio.com/get-download/%s/headless/linux64", version)
 	log.Printf("Downloading: %s", requestUrl)
 	httpResponse, err := http.Get(requestUrl)
 	if err != nil {

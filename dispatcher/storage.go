@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
-	"narval/talkers"
 	"net/url"
 	"os"
 	"time"
@@ -19,18 +18,22 @@ type Store struct {
 }
 
 type UserStore struct {
+	id           Snowflake
 	IsAdmin      bool
 	confirmation string
 }
 
 type ChannelStore struct {
+	id            Snowflake
 	SetupComplete bool
 	Game          string
+	Prefix        string
 	dispatcher    dispatcher
-	session       *talkers.Session
+	session       string
 }
 
 type GuildStore struct {
+	id     Snowflake
 	Bucket string
 	Region string
 }
@@ -100,7 +103,7 @@ func (store Store) user(id string) *UserStore {
 	flake := sf(id)
 	user, found := store.Users[flake]
 	if !found {
-		user = &UserStore{}
+		user = &UserStore{id: flake}
 		store.Users[flake] = user
 	}
 	return user
@@ -110,7 +113,7 @@ func (store Store) channel(id string) *ChannelStore {
 	flake := sf(id)
 	channel, found := store.Channels[flake]
 	if !found {
-		channel = &ChannelStore{}
+		channel = &ChannelStore{id: flake, Prefix: id}
 		store.Channels[flake] = channel
 	}
 	if channel.dispatcher == nil {
@@ -123,7 +126,7 @@ func (store Store) guild(id string) *GuildStore {
 	flake := sf(id)
 	guild, found := store.Guilds[flake]
 	if !found {
-		guild = &GuildStore{}
+		guild = &GuildStore{id: flake}
 		store.Guilds[flake] = guild
 	}
 	return guild

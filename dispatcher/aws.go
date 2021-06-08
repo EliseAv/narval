@@ -97,7 +97,7 @@ func variablesToLauncherScript(variables map[string]string) *string {
 	var builder strings.Builder
 	for name, value := range variables {
 		value = strings.ReplaceAll(value, "'", "'\\''")
-		builder.WriteString(fmt.Sprintf("%s='%s'\n", name, value))
+		builder.WriteString(fmt.Sprintf("export %s='%s'\n", name, value))
 	}
 	builder.WriteString("aws s3 cp s3://$BUCKET/narval /narval\n")
 	builder.WriteString("chmod +x /narval\n")

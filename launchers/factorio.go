@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ulikunitz/xz"
@@ -34,19 +35,51 @@ var factorioRegexpChat = regexp.MustCompile(`^(.+?): (.+)$`)
 var factorioRegexpJoinLeave = regexp.MustCompile(`^(.+) (joined|left) the game$`)
 
 func (server *FactorioServer) Prepare() {
-	if _, err := os.Stat(factorioBinaryPath); !errors.Is(err, os.ErrNotExist) {
-		return // Already have the executable, skip download
-	}
-	s3listRelevantObjects()
-	server.prepareBrandNew()
+	var waitGroup sync.WaitGroup
+	go server.prepareGetGame(waitGroup.Done)
+	go server.prepareGetSave(waitGroup.Done)
+	go server.prepareGetConfig(waitGroup.Done)
+	waitGroup.Add(3)
+	waitGroup.Wait()
 }
 
-func (FactorioServer) prepareBrandNew() {
-	// Download
+func (server *FactorioServer) prepareGetGame(done func()) {
+	defer done()
+	var err error
+
+	if _, err = os.Stat(factorioBinaryPath); !errors.Is(err, os.ErrNotExist) {
+		return // Already have the game
+	}
+
+	reader := s3download("game.tar.xz")
+	if reader == nil {
+		server.prepareGetGameDownload()
+		reader, err = os.Open("/tmp/game.tar.xz")
+		if err != nil {
+			log.Panic(err)
+		}
+		defer server.prepareGetGameUpload()
+	}
+
+	// Un-xz (why the hell do they use xz!)
+	decompressed, err := xz.NewReader(reader)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// Un-tar
+	err = untar(decompressed, "game")
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func (*FactorioServer) prepareGetGameDownload() {
 	version := os.Getenv("FACTORIO_VERSION")
 	if version == "" {
 		version = "latest"
 	}
+	// 64 MB... maybe its ok?
 	requestUrl := fmt.Sprintf("https://factorio.com/get-download/%s/headless/linux64", version)
 	log.Printf("Downloading: %s", requestUrl)
 	httpResponse, err := http.Get(requestUrl)
@@ -55,13 +88,68 @@ func (FactorioServer) prepareBrandNew() {
 	}
 	defer httpResponse.Body.Close()
 
-	// Un-xz (who the hell uses xz!)
-	decompressed, err := xz.NewReader(httpResponse.Body)
+	file, err := os.Create("/tmp/game.tar.xz")
+	if err != nil {
+		log.Panic(err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, httpResponse.Body)
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func (*FactorioServer) prepareGetGameUpload() {
+	fileRead, err := os.Open("/tmp/game.tar.xz")
+	if err != nil {
+		return
+	}
+	s3upload("game.tar.xz", fileRead)
+	os.Remove("/tmp/game.tar.xz")
+}
+
+func (FactorioServer) prepareGetSave(done func()) {
+	defer done()
+
+	if _, err := os.Stat("game/save.zip"); !errors.Is(err, os.ErrNotExist) {
+		return // Already have a save
+	}
+
+	reader := s3download("save.zip")
+	if reader == nil {
+		return // Save not found
+	}
+
+	file, err := os.Create("game/save.zip")
+	if err != nil {
+		log.Panic(err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+func (FactorioServer) prepareGetConfig(done func()) {
+	defer done()
+
+	if _, err := os.Stat("game/factorio/mods/mod-list.json"); !errors.Is(err, os.ErrNotExist) {
+		return // Already have configuration
+	}
+
+	reader := s3download("config.tar.xz")
+	if reader == nil {
+		return
+	}
+
+	decompressed, err := xz.NewReader(reader)
 	if err != nil {
 		log.Panic(err)
 	}
 
-	// Un-tar
 	err = untar(decompressed, "game")
 	if err != nil {
 		log.Panic(err)

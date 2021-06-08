@@ -113,7 +113,7 @@ func (store Store) channel(id string) *ChannelStore {
 	flake := sf(id)
 	channel, found := store.Channels[flake]
 	if !found {
-		channel = &ChannelStore{id: flake, Prefix: id}
+		channel = &ChannelStore{id: flake, Prefix: id + "/"}
 		store.Channels[flake] = channel
 	}
 	if channel.dispatcher == nil {

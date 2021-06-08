@@ -2,6 +2,7 @@ package launchers
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -33,10 +34,14 @@ var factorioRegexpChat = regexp.MustCompile(`^(.+?): (.+)$`)
 var factorioRegexpJoinLeave = regexp.MustCompile(`^(.+) (joined|left) the game$`)
 
 func (server *FactorioServer) Prepare() {
-	if _, err := os.Stat(factorioBinaryPath); !os.IsNotExist(err) {
+	if _, err := os.Stat(factorioBinaryPath); !errors.Is(err, os.ErrNotExist) {
 		return // Already have the executable, skip download
 	}
+	s3listRelevantObjects()
+	server.prepareBrandNew()
+}
 
+func (FactorioServer) prepareBrandNew() {
 	// Download
 	version := os.Getenv("FACTORIO_VERSION")
 	if version == "" {
@@ -50,7 +55,7 @@ func (server *FactorioServer) Prepare() {
 	}
 	defer httpResponse.Body.Close()
 
-	// Un-xz
+	// Un-xz (who the hell uses xz!)
 	decompressed, err := xz.NewReader(httpResponse.Body)
 	if err != nil {
 		log.Panic(err)

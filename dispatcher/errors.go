@@ -1,7 +1,5 @@
 package dispatcher
 
-type unauthorized struct{}
+import "errors"
 
-func (unauthorized) Error() string {
-	return "Unauthorized"
-}
+var errUnauthorized = errors.New("Unauthorized")

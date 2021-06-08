@@ -87,13 +87,11 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		command := strings.Split(message.Content[1:], " ")
 		event := messageEvent{session, message, command}
 		err := event.commands()
-		if err != nil {
-			if err == (unauthorized{}) {
-				event.react(":unamused:")
-			} else {
-				log.Printf("Message errored out: %s", err)
-				event.react(":warning:")
-			}
+		if err == errUnauthorized {
+			event.react(":unamused:")
+		} else if err != nil {
+			log.Printf("Message errored out: %s", err)
+			event.react(":warning:")
 		}
 	}
 }
@@ -132,7 +130,7 @@ func (event messageEvent) commandOpme() error {
 			store.store()
 			return event.react(":white_check_mark:")
 		} else {
-			return unauthorized{}
+			return errUnauthorized
 		}
 	}
 }
@@ -140,7 +138,7 @@ func (event messageEvent) commandOpme() error {
 func (event messageEvent) commandAws() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		return unauthorized{}
+		return errUnauthorized
 	}
 	if len(event.command) != 3 {
 		return event.reply("Expected: `>aws region-name bucket-name`")
@@ -155,7 +153,7 @@ func (event messageEvent) commandAws() error {
 func (event messageEvent) commandSetup() error {
 	user := store.user(event.message.Author.ID)
 	if !user.IsAdmin {
-		return unauthorized{}
+		return errUnauthorized
 	}
 	channel := store.channel(event.message.ChannelID)
 	if channel.SetupComplete {

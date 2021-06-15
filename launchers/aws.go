@@ -27,37 +27,36 @@ func awsLoadConfig() aws.Config {
 }
 
 var envBucket = os.Getenv("BUCKET")
-var envPrefix = envGetKeyPrefix()
+var envPrefix = ensureItsAFolder(os.Getenv("PREFIX"))
 
-func envGetKeyPrefix() string {
-	var prefix = os.Getenv("PREFIX")
-	if prefix != "" && !strings.HasSuffix(prefix, "/") {
-		prefix += "/"
+func ensureItsAFolder(path string) string {
+	if path != "" && !strings.HasSuffix(path, "/") {
+		path += "/"
 	}
-	return prefix
+	return path
 }
 
-// func s3listRelevantObjects() map[string]*string {
-// 	input := s3.ListObjectsV2Input{
-// 		Bucket: &envBucket,
-// 		Prefix: &envPrefix,
-// 	}
-// 	pl := len(envPrefix)
-// 	result := map[string]*string{}
-// 	for {
-// 		output, err := s3client.ListObjectsV2(ctx, &input)
-// 		if err != nil {
-// 			log.Panic(err)
-// 		}
-// 		for _, value := range output.Contents {
-// 			result[(*value.Key)[pl:]] = value.Key
-// 		}
-// 		if output.NextContinuationToken == nil {
-// 			return result
-// 		}
-// 		input.ContinuationToken = output.NextContinuationToken
-// 	}
-// }
+func s3listRelevantObjects(prefix string) map[string]*string {
+	input := s3.ListObjectsV2Input{
+		Bucket: &envBucket,
+		Prefix: aws.String(ensureItsAFolder(envPrefix + prefix)),
+	}
+	pl := len(*input.Prefix)
+	result := map[string]*string{}
+	for {
+		output, err := s3client.ListObjectsV2(ctx, &input)
+		if err != nil {
+			log.Panic(err)
+		}
+		for _, value := range output.Contents {
+			result[(*value.Key)[pl:]] = value.Key
+		}
+		if output.NextContinuationToken == nil {
+			return result
+		}
+		input.ContinuationToken = output.NextContinuationToken
+	}
+}
 
 func s3download(name string) io.ReadCloser {
 	input := s3.GetObjectInput{

@@ -95,12 +95,15 @@ func ec2getBestAmi(ctx context.Context, client *ec2.Client) (*string, error) {
 
 func variablesToLauncherScript(variables map[string]string) *string {
 	var builder strings.Builder
+	// aws requires the shebang line in the userdata to run
+	builder.WriteString("#!/bin/bash\n")
 	for name, value := range variables {
 		value = strings.ReplaceAll(value, "'", "'\\''")
 		builder.WriteString(fmt.Sprintf("export %s='%s'\n", name, value))
 	}
-	builder.WriteString("aws s3 cp s3://$BUCKET/narval /narval\n")
-	builder.WriteString("chmod +x /narval\n")
-	builder.WriteString("/narval\n")
+	// start narval as common user
+	builder.WriteString("aws s3 cp s3://$BUCKET/narval /opt/narval\n")
+	builder.WriteString("chmod +x /opt/narval\n")
+	builder.WriteString("sudo -u ec2-user -i /opt/narval\n")
 	return aws.String(builder.String())
 }

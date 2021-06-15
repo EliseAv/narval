@@ -36,10 +36,9 @@ var factorioRegexpJoinLeave = regexp.MustCompile(`^(.+) (joined|left) the game$`
 
 func (server *FactorioServer) Prepare() {
 	var waitGroup sync.WaitGroup
-	go server.prepareGetGame(waitGroup.Done)
-	go server.prepareGetSave(waitGroup.Done)
-	go server.prepareGetConfig(waitGroup.Done)
 	waitGroup.Add(3)
+	go server.prepareGetGame(waitGroup.Done)
+	go server.prepareGetState(waitGroup.Done)
 	waitGroup.Wait()
 }
 
@@ -58,7 +57,7 @@ func (server *FactorioServer) prepareGetGame(done func()) {
 		if err != nil {
 			log.Panic(err)
 		}
-		defer server.prepareGetGameUpload()
+		defer func() { go server.prepareGetGameUpload() }()
 	}
 
 	// Un-xz (why the hell do they use xz!)
@@ -79,7 +78,6 @@ func (*FactorioServer) prepareGetGameDownload() {
 	if version == "" {
 		version = "latest"
 	}
-	// 64 MB... maybe its ok?
 	requestUrl := fmt.Sprintf("https://factorio.com/get-download/%s/headless/linux64", version)
 	log.Printf("Downloading: %s", requestUrl)
 	httpResponse, err := http.Get(requestUrl)
@@ -109,51 +107,41 @@ func (*FactorioServer) prepareGetGameUpload() {
 	os.Remove("/tmp/game.tar.xz")
 }
 
-func (FactorioServer) prepareGetSave(done func()) {
+func (FactorioServer) prepareGetState(done func()) {
 	defer done()
 
-	if _, err := os.Stat("game/save.zip"); !errors.Is(err, os.ErrNotExist) {
-		return // Already have a save
-	}
+	var waitGroup sync.WaitGroup
+	for name := range s3listRelevantObjects("state") {
+		if _, err := os.Stat("game/" + name); !errors.Is(err, os.ErrNotExist) {
+			continue // We already have the file
+		}
 
-	reader := s3download("save.zip")
-	if reader == nil {
-		return // Save not found
-	}
+		waitGroup.Add(1)
+		go func(name string, done func()) {
+			defer done()
+			reader := s3download("state/" + name)
+			if reader == nil {
+				return // Not found (???)
+			}
 
-	file, err := os.Create("game/save.zip")
-	if err != nil {
-		log.Panic(err)
-	}
-	defer file.Close()
+			file, err := os.Create("game/" + name)
+			if err != nil {
+				log.Panic(err)
+			}
+			defer file.Close()
 
-	_, err = io.Copy(file, reader)
-	if err != nil {
-		log.Panic(err)
+			_, err = io.Copy(file, reader)
+			if err != nil {
+				log.Panic(err)
+			}
+		}(name, waitGroup.Done)
 	}
+	waitGroup.Wait()
 }
 
-func (FactorioServer) prepareGetConfig(done func()) {
-	defer done()
-
-	if _, err := os.Stat("game/factorio/mods/mod-list.json"); !errors.Is(err, os.ErrNotExist) {
-		return // Already have configuration
-	}
-
-	reader := s3download("config.tar.xz")
-	if reader == nil {
-		return
-	}
-
-	decompressed, err := xz.NewReader(reader)
-	if err != nil {
-		log.Panic(err)
-	}
-
-	err = untar(decompressed, "game")
-	if err != nil {
-		log.Panic(err)
-	}
+func (FactorioServer) saveState() {
+	// folderTargets := []string{"mods", "config"}
+	// fileExtensionTargets := []string{"json", "dat", "zip"}
 }
 
 func (server *FactorioServer) Start() {
@@ -218,6 +206,7 @@ func (server *FactorioServer) processLine(line string) (parsed ParsedLine) {
 
 	if factorioRegexpSaved.MatchString(line) {
 		parsed.Event = EventSaved
+		go server.saveState()
 		return
 	}
 

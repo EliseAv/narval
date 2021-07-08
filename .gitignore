@@ -4,7 +4,7 @@
 *.dll
 *.so
 *.dylib
-/narval
+/narval*
 
 # Test binary, built with `go test -c`
 *.test

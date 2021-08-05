@@ -67,7 +67,7 @@ func (server *FactorioServer) prepareGetGame(done func()) {
 	}
 
 	// Un-tar
-	err = untar(decompressed, "game")
+	err = unTar(decompressed, "game")
 	if err != nil {
 		log.Panic(err)
 	}
@@ -84,13 +84,13 @@ func (*FactorioServer) prepareGetGameDownload() {
 	if err != nil {
 		log.Panic(err)
 	}
-	defer httpResponse.Body.Close()
+	defer CloseDontCare(httpResponse.Body)
 
 	file, err := os.Create("/tmp/game.tar.xz")
 	if err != nil {
 		log.Panic(err)
 	}
-	defer file.Close()
+	defer CloseDontCare(file)
 
 	_, err = io.Copy(file, httpResponse.Body)
 	if err != nil {
@@ -103,8 +103,8 @@ func (*FactorioServer) prepareGetGameUpload() {
 	if err != nil {
 		return
 	}
-	s3upload("game.tar.xz", fileRead)
-	os.Remove("/tmp/game.tar.xz")
+	_ = s3upload("game.tar.xz", fileRead)
+	_ = os.Remove("/tmp/game.tar.xz")
 }
 
 func (FactorioServer) prepareGetState(done func()) {
@@ -128,7 +128,7 @@ func (FactorioServer) prepareGetState(done func()) {
 			if err != nil {
 				log.Panic(err)
 			}
-			defer file.Close()
+			defer CloseDontCare(file)
 
 			_, err = io.Copy(file, reader)
 			if err != nil {
@@ -149,7 +149,11 @@ func (server *FactorioServer) Start() {
 	command := exec.Command(factorioBinaryPath, "--start-server", "game/save.zip")
 	stdout, _ := command.StdoutPipe()
 	server.in, _ = command.StdinPipe()
-	command.Start()
+	err := command.Start()
+	if err != nil {
+		log.Panic(err)
+		return
+	}
 	server.out = make(chan ParsedLine, 100)
 
 	startupGraceDuration, err := time.ParseDuration(os.Getenv("STARTUP_GRACE"))
@@ -257,6 +261,6 @@ func (server FactorioServer) GetLinesChannel() chan ParsedLine {
 
 func (server FactorioServer) SendCommand(line ParsedLine) {
 	if line.Event == EventStop {
-		server.in.Write([]byte("/quit\n"))
+		_, _ = server.in.Write([]byte("/quit\n"))
 	}
 }

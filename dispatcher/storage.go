@@ -3,6 +3,7 @@ package dispatcher
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/url"
 	"os"
@@ -44,12 +45,11 @@ var store Store
 var storeUrl url.URL
 var storeThrottle = make(chan struct{}, 200)
 
-func loadSettings() {
+func loadSettings() error {
 	envUrl := os.Getenv("STORAGE_URL")
 	storeUrlPointer, err := url.Parse(envUrl)
 	if err != nil {
-		log.Printf("Unable to parse store URL (%s): %v", envUrl, err)
-		return
+		return err
 	}
 	storeUrl = *storeUrlPointer
 	log.Printf("Store URL is %v", storeUrl)
@@ -57,18 +57,22 @@ func loadSettings() {
 	switch storeUrl.Scheme {
 	case "file":
 		buffer, err = os.ReadFile(storeUrl.Opaque)
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			initializeStore()
-			return
+			return nil
 		}
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 	default:
 		log.Panicf("Scheme not implemented: %v", storeUrl)
 	}
-	json.Unmarshal(buffer, &store)
+	err = json.Unmarshal(buffer, &store)
+	if err != nil {
+		return err
+	}
 	go keepStoring()
+	return nil
 }
 
 func initializeStore() {
@@ -94,7 +98,7 @@ func keepStoring() {
 		switch storeUrl.Scheme {
 		case "file":
 			reader := bytes.NewReader(buffer)
-			atomic.WriteFile(storeUrl.Opaque, reader)
+			_ = atomic.WriteFile(storeUrl.Opaque, reader)
 		}
 	}
 }

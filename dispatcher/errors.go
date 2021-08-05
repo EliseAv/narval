@@ -2,4 +2,4 @@ package dispatcher
 
 import "errors"
 
-var errUnauthorized = errors.New("Unauthorized")
+var errUnauthorized = errors.New("unauthorized")

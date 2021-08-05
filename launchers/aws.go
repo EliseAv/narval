@@ -75,11 +75,12 @@ func s3download(name string) io.ReadCloser {
 	return output.Body
 }
 
-func s3upload(name string, body io.Reader) {
+func s3upload(name string, body io.Reader) error {
 	input := s3.PutObjectInput{
 		Bucket: &envBucket,
 		Key:    aws.String(envPrefix + name),
 		Body:   body,
 	}
-	s3client.PutObject(ctx, &input)
+	_, err := s3client.PutObject(ctx, &input)
+	return err
 }

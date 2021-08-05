@@ -1,21 +1,21 @@
 package dispatcher
 
 import (
-	crypto_rand "crypto/rand"
+	cryptoRand "crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"github.com/bwmarrin/discordgo"
 	"io"
 	"log"
 	"math/rand"
+	"narval/launchers"
 	"os"
 	"os/signal"
 	"path"
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/bwmarrin/discordgo"
 )
 
 type messageEvent struct {
@@ -30,7 +30,10 @@ type dispatcher interface {
 }
 
 func RunDispatcher() {
-	loadSettings()
+	err := loadSettings()
+	if err != nil {
+		log.Panic(err)
+	}
 
 	discord, err := discordgo.New("Bot " + os.Getenv("DISCORD_TOKEN"))
 	if err != nil {
@@ -43,9 +46,9 @@ func RunDispatcher() {
 	if err != nil {
 		log.Panic(err)
 	}
-	defer discord.Close()
+	defer launchers.CloseDontCare(discord)
 
-	// We done; just wait for exit
+	// We are done; just wait for exit
 	fmt.Println("Bot is running. Ctrl-C to exit.")
 	signalsChannel := make(chan os.Signal, 1)
 	signal.Notify(signalsChannel, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
@@ -56,7 +59,7 @@ func init() {
 	// Try to seed the RNG with a cryptographically good 64-bit number
 	// https://stackoverflow.com/a/54491783/98029
 	var buffer [8]byte
-	_, err := crypto_rand.Read(buffer[:])
+	_, err := cryptoRand.Read(buffer[:])
 	var seed int64
 	if err != nil {
 		seed = time.Now().UnixNano() ^ -0xbeef1e57b00b1e5
@@ -88,10 +91,10 @@ func messageCreate(session *discordgo.Session, message *discordgo.MessageCreate)
 		event := messageEvent{session, message, command}
 		err := event.commands()
 		if err == errUnauthorized {
-			event.react(":unamused:")
+			_ = event.react(":unamused:")
 		} else if err != nil {
 			log.Printf("Message errored out: %s", err)
-			event.react(":warning:")
+			_ = event.react(":warning:")
 		}
 	}
 }

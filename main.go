@@ -1,15 +1,18 @@
 package main
 
 import (
+	"github.com/joho/godotenv"
+	"log"
 	"narval/dispatcher"
 	"narval/launchers"
 	"os"
-
-	"github.com/joho/godotenv"
 )
 
 func main() {
-	godotenv.Load()
+	err := godotenv.Load()
+	if err != nil {
+		log.Print(err)
+	}
 
 	launch := os.Getenv("LAUNCH")
 	if launch != "" {

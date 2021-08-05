@@ -11,10 +11,10 @@ import (
 	"time"
 )
 
-type jsobj map[string]interface{}
+type jsObj map[string]interface{}
 
 var ipAddress string
-var ipAddressKnown chan struct{} = make(chan struct{})
+var ipAddressKnown = make(chan struct{})
 
 func Launch(what string) {
 	var server Server
@@ -52,9 +52,9 @@ func toMessage(server Server, line ParsedLine) string {
 }
 
 func sayInDiscord(message string) {
-	body := jsobj{
+	body := jsObj{
 		"content":          message,
-		"allowed_mentions": jsobj{"parse": []string{}},
+		"allowed_mentions": jsObj{"parse": []string{}},
 	}
 	payload, err := json.Marshal(body)
 	if err != nil {
@@ -80,16 +80,16 @@ func fetchIpAddress() {
 		return
 	}
 
-	ifaces, err := net.Interfaces()
+	interfaces, err := net.Interfaces()
 	if err != nil {
 		log.Panic(err)
 	}
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
+	for _, i := range interfaces {
+		addresses, err := i.Addrs()
 		if err != nil {
 			log.Panic(err)
 		}
-		for _, addr := range addrs {
+		for _, addr := range addresses {
 			var ip net.IP
 			switch v := addr.(type) {
 			case *net.IPNet:

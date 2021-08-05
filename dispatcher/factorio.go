@@ -10,13 +10,13 @@ func init() {
 	allDispatchers["factorio"] = factorioDispatcher{}
 }
 
-type jsobj map[string]interface{}
+type jsObj map[string]interface{}
 
 type factorioDispatcher struct{}
 
 func (factorioDispatcher) setup(event messageEvent) error {
 	// we're not yet using this file, this is just to see how to do it
-	initFile, err := json.Marshal(jsobj{"launch": "factorio"})
+	initFile, err := json.Marshal(jsObj{"launch": "factorio"})
 	if err != nil {
 		return err
 	}
@@ -33,15 +33,17 @@ func (factorioDispatcher) setup(event messageEvent) error {
 		// "Some server json files are accepted too, including world settings with world seed.",
 		"When you are ready, say `>start`",
 	}
-	event.reply(strings.Join(message, "\n"))
-	return nil
+	return event.reply(strings.Join(message, "\n"))
 }
 
 func (factorioDispatcher) play(event messageEvent) error {
 	guild := store.guild(event.message.GuildID)
 	channel := store.channel(event.message.ChannelID)
 	channel.session = randString()
-	s3uploadSelf(guild)
+	err := s3uploadSelf(guild)
+	if err != nil {
+		return err
+	}
 	variables := map[string]string{
 		"LAUNCH":  "factorio",
 		"BUCKET":  guild.Bucket,

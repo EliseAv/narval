@@ -27,11 +27,10 @@ type ParsedLine struct {
 type EventKind byte
 
 const (
-	EventOther EventKind = iota
+	EventTalk EventKind = iota
 	EventReady
 	EventSaved
 	EventStop
-	EventTalk
 	EventJoin
 	EventLeave
 )
@@ -42,13 +41,13 @@ func stdinPassThrough(destination io.WriteCloser) {
 	buffer := []byte{1}
 	numBytes, _ := os.Stdin.Read(buffer)
 	for numBytes > 0 {
-		destination.Write(buffer)
+		_, _ = destination.Write(buffer)
 		numBytes, _ = os.Stdin.Read(buffer)
 	}
-	os.Stdin.Close()
+	_ = os.Stdin.Close()
 }
 
-func untar(decompressedReader io.Reader, pathPrefix string) error {
+func unTar(decompressedReader io.Reader, pathPrefix string) error {
 	madeDir := map[string]bool{}
 	unpacked := tar.NewReader(decompressedReader)
 	header, err := unpacked.Next()
@@ -85,7 +84,7 @@ func untar(decompressedReader io.Reader, pathPrefix string) error {
 				return fmt.Errorf("only wrote %d bytes to %s; expected %d", numBytesWritten, path, header.Size)
 			}
 		case mode.IsDir():
-			os.MkdirAll(path, 0755)
+			_ = os.MkdirAll(path, 0755)
 			madeDir[path] = true
 		}
 	}
@@ -94,4 +93,8 @@ func untar(decompressedReader io.Reader, pathPrefix string) error {
 		return nil
 	}
 	return err
+}
+
+func CloseDontCare(closer io.Closer) {
+	_ = closer.Close()
 }

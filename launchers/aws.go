@@ -14,6 +14,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
+type s3downloadJob struct {
+	from, to string
+}
+
 var ctx = context.Background()
 var cfg = awsLoadConfig()
 var s3client = s3.NewFromConfig(cfg)
@@ -82,5 +86,21 @@ func s3upload(name string, body io.Reader) error {
 		Body:   body,
 	}
 	_, err := s3client.PutObject(ctx, &input)
+	return err
+}
+
+func (job s3downloadJob) Run() error {
+	reader := s3download(job.from)
+	if reader == nil {
+		return nil // Not found (???)
+	}
+
+	file, err := os.Create(job.to)
+	if err != nil {
+		return err
+	}
+	defer CloseDontCare(file)
+
+	_, err = io.Copy(file, reader)
 	return err
 }

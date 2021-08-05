@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ulikunitz/xz"
@@ -34,28 +33,29 @@ var factorioRegexpMainLog = regexp.MustCompile(`^.{19} \[([A-Z]+)] (.+)$`)
 var factorioRegexpChat = regexp.MustCompile(`^(.+?): (.+)$`)
 var factorioRegexpJoinLeave = regexp.MustCompile(`^(.+) (joined|left) the game$`)
 
-func (server *FactorioServer) Prepare() {
-	var waitGroup sync.WaitGroup
-	waitGroup.Add(3)
-	go server.prepareGetGame(waitGroup.Done)
-	go server.prepareGetState(waitGroup.Done)
-	waitGroup.Wait()
+func (server *FactorioServer) Prepare() error {
+	worker := ParallelWorker{}
+	worker.Add(server.prepareGetGame)
+	worker.Add(server.prepareGetState)
+	return worker.Join()
 }
 
-func (server *FactorioServer) prepareGetGame(done func()) {
-	defer done()
+func (server *FactorioServer) prepareGetGame() error {
 	var err error
 
 	if _, err = os.Stat(factorioBinaryPath); !errors.Is(err, os.ErrNotExist) {
-		return // Already have the game
+		return nil // Already have the game
 	}
 
 	reader := s3download("game.tar.xz")
 	if reader == nil {
-		server.prepareGetGameDownload()
+		err := server.prepareGetGameDownload()
+		if err != nil {
+			return err
+		}
 		reader, err = os.Open("/tmp/game.tar.xz")
 		if err != nil {
-			log.Panic(err)
+			return err
 		}
 		defer func() { go server.prepareGetGameUpload() }()
 	}
@@ -63,17 +63,15 @@ func (server *FactorioServer) prepareGetGame(done func()) {
 	// Un-xz (why the hell do they use xz!)
 	decompressed, err := xz.NewReader(reader)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 
 	// Un-tar
 	err = unTar(decompressed, "game")
-	if err != nil {
-		log.Panic(err)
-	}
+	return err
 }
 
-func (*FactorioServer) prepareGetGameDownload() {
+func (*FactorioServer) prepareGetGameDownload() error {
 	version := os.Getenv("FACTORIO_VERSION")
 	if version == "" {
 		version = "latest"
@@ -82,20 +80,18 @@ func (*FactorioServer) prepareGetGameDownload() {
 	log.Printf("Downloading: %s", requestUrl)
 	httpResponse, err := http.Get(requestUrl)
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	defer CloseDontCare(httpResponse.Body)
 
 	file, err := os.Create("/tmp/game.tar.xz")
 	if err != nil {
-		log.Panic(err)
+		return err
 	}
 	defer CloseDontCare(file)
 
 	_, err = io.Copy(file, httpResponse.Body)
-	if err != nil {
-		log.Panic(err)
-	}
+	return err
 }
 
 func (*FactorioServer) prepareGetGameUpload() {
@@ -103,40 +99,25 @@ func (*FactorioServer) prepareGetGameUpload() {
 	if err != nil {
 		return
 	}
-	_ = s3upload("game.tar.xz", fileRead)
+
+	err = s3upload("game.tar.xz", fileRead)
+	if err != nil {
+		return
+	}
+
 	_ = os.Remove("/tmp/game.tar.xz")
 }
 
-func (FactorioServer) prepareGetState(done func()) {
-	defer done()
-
-	var waitGroup sync.WaitGroup
+func (FactorioServer) prepareGetState() error {
+	var worker ParallelWorker
 	for name := range s3listRelevantObjects("state") {
 		if _, err := os.Stat("game/" + name); !errors.Is(err, os.ErrNotExist) {
 			continue // We already have the file
 		}
 
-		waitGroup.Add(1)
-		go func(name string, done func()) {
-			defer done()
-			reader := s3download("state/" + name)
-			if reader == nil {
-				return // Not found (???)
-			}
-
-			file, err := os.Create("game/" + name)
-			if err != nil {
-				log.Panic(err)
-			}
-			defer CloseDontCare(file)
-
-			_, err = io.Copy(file, reader)
-			if err != nil {
-				log.Panic(err)
-			}
-		}(name, waitGroup.Done)
+		worker.Add(s3downloadJob{"state/" + name, "game/" + name}.Run)
 	}
-	waitGroup.Wait()
+	return worker.Join()
 }
 
 func (FactorioServer) saveState() {
@@ -144,15 +125,14 @@ func (FactorioServer) saveState() {
 	// fileExtensionTargets := []string{"json", "dat", "zip"}
 }
 
-func (server *FactorioServer) Start() {
+func (server *FactorioServer) Start() error {
 	server.players = map[User]bool{}
 	command := exec.Command(factorioBinaryPath, "--start-server", "game/save.zip")
 	stdout, _ := command.StdoutPipe()
 	server.in, _ = command.StdinPipe()
 	err := command.Start()
 	if err != nil {
-		log.Panic(err)
-		return
+		return err
 	}
 	server.out = make(chan ParsedLine, 100)
 
@@ -176,6 +156,7 @@ func (server *FactorioServer) Start() {
 	go server.readStdout(stdout)
 	go server.idleTimeout()
 	go stdinPassThrough(server.in)
+	return nil
 }
 
 func (server *FactorioServer) idleTimeout() {
@@ -185,7 +166,10 @@ func (server *FactorioServer) idleTimeout() {
 		time.Sleep(interval)
 	}
 	log.Printf("Shutting down!")
-	server.SendCommand(ParsedLine{Event: EventStop})
+	err := server.SendCommand(ParsedLine{Event: EventStop})
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (server *FactorioServer) readStdout(stdout io.ReadCloser) {
@@ -259,8 +243,10 @@ func (server FactorioServer) GetLinesChannel() chan ParsedLine {
 	return server.out
 }
 
-func (server FactorioServer) SendCommand(line ParsedLine) {
+func (server FactorioServer) SendCommand(line ParsedLine) error {
 	if line.Event == EventStop {
-		_, _ = server.in.Write([]byte("/quit\n"))
+		_, err := server.in.Write([]byte("/quit\n"))
+		return err
 	}
+	return errInvalidCommand
 }

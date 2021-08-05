@@ -10,11 +10,11 @@ import (
 )
 
 type Server interface {
-	Prepare()
-	Start()
+	Prepare() error
+	Start() error
 	NumPlayers() int
 	GetLinesChannel() chan ParsedLine
-	SendCommand(ParsedLine)
+	SendCommand(ParsedLine) error
 }
 
 type ParsedLine struct {

@@ -16,9 +16,11 @@ func main() {
 
 	launch := os.Getenv("LAUNCH")
 	if launch != "" {
-		launchers.Launch(launch)
-		return
+		err = launchers.Launch(launch)
+		if err != nil {
+			log.Panic(err)
+		}
+	} else {
+		dispatcher.RunDispatcher()
 	}
-
-	dispatcher.RunDispatcher()
 }

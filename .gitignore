@@ -5,6 +5,8 @@
 *.so
 *.dylib
 /narval*
+/build/
+.idea
 
 # Test binary, built with `go test -c`
 *.test

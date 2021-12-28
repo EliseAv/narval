@@ -2,6 +2,7 @@ package dispatcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +16,7 @@ import (
 )
 
 var s3alreadyUploadedSelf = map[string]bool{}
+var errAmiNotFound = errors.New("AWS AMI Not Found")
 
 func s3upload(guild *GuildStore, key string, reader io.Reader) error {
 	ctx := context.TODO()
@@ -82,15 +84,18 @@ func ec2getBestAmi(ctx context.Context, client *ec2.Client) (*string, error) {
 	if err != nil {
 		return nil, err
 	}
-	mostRecentIndex := 0
-	mostRecentDate := ""
-	for index, image := range amiOutput.Images {
-		if mostRecentDate < *image.CreationDate {
-			mostRecentIndex = index
-			mostRecentDate = *image.CreationDate
+	var mostRecentName, mostRecentDate *string
+	mostRecentDate = aws.String("")
+	for _, image := range amiOutput.Images {
+		if *mostRecentDate < *image.CreationDate {
+			mostRecentDate = image.CreationDate
+			mostRecentName = image.Name
 		}
 	}
-	return amiOutput.Images[mostRecentIndex].Name, nil
+	if mostRecentName == nil {
+		return nil, errAmiNotFound
+	}
+	return mostRecentName, nil
 }
 
 func variablesToLauncherScript(variables map[string]string) *string {

@@ -3,6 +3,7 @@ package launchers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -16,17 +17,26 @@ type jsObj map[string]interface{}
 var ipAddress string
 var ipAddressKnown = make(chan struct{})
 
-func Launch(what string) {
+func Launch(what string) error {
 	var server Server
 	switch what {
 	case "factorio":
 		server = &FactorioServer{}
 	default:
-		log.Panicf("Server %s not defined", what)
+		return errors.New("Server not defined: " + what)
 	}
 	go fetchIpAddress()
-	server.Prepare()
-	server.Start()
+
+	err := server.Prepare()
+	if err != nil {
+		return err
+	}
+
+	err = server.Start()
+	if err != nil {
+		return err
+	}
+
 	for line := range server.GetLinesChannel() {
 		message := toMessage(server, line)
 		if message != "" {
@@ -34,6 +44,7 @@ func Launch(what string) {
 		}
 	}
 	sayInDiscord("Server shut down.")
+	return nil
 }
 
 func toMessage(server Server, line ParsedLine) string {
